@@ -1,0 +1,31 @@
+@startuml
+' === AGENTICS METADATA ===
+' diagram_id: domain_1
+' diagram_type: domain_class
+' name: Domínio de Autenticação
+' source_requirements: [req1, req2, req3, req4]
+' === END METADATA ===
+
+class "Usuario" as cls_usuario <<entity>> {
+  - id: UUID
+  - email: String
+  - nome: String
+  - senha_hash: String
+  - ativo: Boolean
+}
+
+class "Sessao" as cls_sessao <<entity>> {
+  - id: UUID
+  - token: String
+  - expira_em: DateTime
+}
+
+class "EmailConfirmacao" as cls_email <<value_object>> {
+  - endereco: String
+  - token: String
+  - expira_em: DateTime
+}
+
+cls_usuario "1" -- "0..*" cls_sessao        : possui
+cls_usuario "1" *-- "0..1" cls_email        : tem pendente
+@enduml

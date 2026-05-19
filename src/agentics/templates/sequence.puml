@@ -1,0 +1,51 @@
+@startuml
+' === AGENTICS METADATA ===
+' diagram_id: seq_1
+' diagram_type: sequence
+' name: Fluxo de Login
+' source_requirements: [req1, req2]
+' related_use_case: uc_login
+' === END METADATA ===
+
+' Lifelines: alias DEVE ter prefixo ll_
+' Tipos obrigatórios: actor, boundary, control, entity, participant
+actor    "Usuário"         as ll_usuario
+boundary "LoginForm"       as ll_form
+control  "AuthController"  as ll_controller
+entity   "Usuario"         as ll_usuario_obj
+entity   "Sessao"          as ll_sessao
+
+' Mensagens síncronas: ->
+' Retornos: -->
+' Assíncronas: ->>
+ll_usuario    -> ll_form       : preenche(email, senha)
+ll_form       -> ll_controller : login(email, senha)
+activate ll_controller
+
+ll_controller -> ll_usuario_obj : buscar(email)
+ll_usuario_obj --> ll_controller : usuario
+
+' Fragmento alt: fluxo alternativo
+alt credenciais válidas
+  ll_controller -> ll_sessao : criar(usuario)
+  ll_sessao     --> ll_controller : token
+  ll_controller --> ll_form  : token
+  ll_form       --> ll_usuario : sucesso
+else credenciais inválidas
+  ll_controller --> ll_form  : erro(401)
+  ll_form       --> ll_usuario : mensagem de erro
+end
+
+deactivate ll_controller
+
+' Fragmento opt: comportamento opcional
+opt lembrar_acesso
+  ll_controller ->> ll_usuario_obj : marcar_ultimo_acesso()
+end
+
+' Fragmento loop: repetição
+' loop 3 vezes
+'   ll_usuario -> ll_form : tentar novamente
+' end
+
+@enduml

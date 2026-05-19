@@ -1,0 +1,40 @@
+@startuml
+' === AGENTICS METADATA ===
+' diagram_id: domain_1
+' diagram_type: domain_class
+' name: Nome do Domínio
+' source_requirements: [req1, req2, req3]
+' === END METADATA ===
+
+' Classes: alias DEVE ter prefixo cls_
+' Estereótipos de papel: <<entity>>, <<value_object>>, <<service>>
+' PROIBIDO: métodos (blocos com parênteses) — apenas atributos
+
+class "Usuario" as cls_usuario <<entity>> {
+  - id: UUID
+  - email: String
+  - nome: String
+  - criado_em: DateTime
+}
+
+class "Sessao" as cls_sessao <<entity>> {
+  - id: UUID
+  - token: String
+  - expira_em: DateTime
+}
+
+class "Email" as cls_email <<value_object>> {
+  - endereco: String
+  - verificado: Boolean
+}
+
+class "AuthService" as cls_auth_service <<service>> {
+}
+
+' Relacionamentos com multiplicidades SEMPRE entre aspas duplas
+' Tipos: -- (associação), o-- (agregação), *-- (composição), --|> (herança), ..> (dependência)
+cls_usuario "1" -- "0..*" cls_sessao   : possui
+cls_usuario "1" *-- "1"   cls_email    : tem
+cls_auth_service  ..>      cls_usuario  : usa
+
+@enduml

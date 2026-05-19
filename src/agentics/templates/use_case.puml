@@ -1,0 +1,31 @@
+@startuml
+' === AGENTICS METADATA ===
+' diagram_id: uc_1
+' diagram_type: use_case
+' name: Nome do Caso de Uso
+' source_requirements: [req1, req2]
+' === END METADATA ===
+
+left to right direction
+
+' Atores: alias DEVE ter prefixo ator_
+' Estereótipo: <<primary>> para ator principal, <<secondary>> para ator externo/sistema
+actor "Usuário"        as ator_usuario       <<primary>>
+actor "Administrador"  as ator_admin         <<primary>>
+actor "Email Service"  as ator_email         <<secondary>>
+
+' Use cases: alias DEVE ter prefixo uc_
+' Estereótipo: << req:reqN >> referencia o requisito de origem
+usecase "Realizar Login"        as uc_login            << req:req1 >>
+usecase "Validar Credenciais"   as uc_validar          << req:req2 >>
+usecase "Enviar Email de Boas-Vindas" as uc_email      << req:req1 >>
+
+' Relacionamentos: <<include>>, <<extend>>, generalização --|>
+ator_usuario  --> uc_login
+uc_login      ..> uc_validar  : <<include>>
+uc_login      ..> uc_email    : <<extend>>
+
+' Generalização de ator
+' ator_admin --|> ator_usuario
+
+@enduml

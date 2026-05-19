@@ -1,0 +1,53 @@
+@startuml
+' === AGENTICS METADATA ===
+' diagram_id: spec_1
+' diagram_type: specialized_class
+' name: Classes Especializadas - Autenticação
+' source_requirements: [req1, req2]
+' based_on_domain: domain_1
+' based_on_sequences: [seq_1]
+' === END METADATA ===
+
+' Mesmas convenções do Domain (prefixo cls_, estereótipos de papel)
+' ADICIONADO: métodos com visibilidade explícita (+, -, #, ~)
+' ADICIONADO: comentário inline ' from: <seq_id> / msg #N para rastreabilidade
+' ADICIONADO: estereótipos de padrão <<pattern:X>>
+' ADICIONADO: {readOnly}, {static} em atributos quando aplicável
+
+class "Usuario" as cls_usuario <<entity>> {
+  - {readOnly} id: UUID
+  - email: String
+  - nome: String
+  - senha_hash: String
+  # criado_em: DateTime
+
+  + autenticar(senha: String): Boolean        ' from: seq_1 / msg #4
+  + buscar(email: String): Usuario            ' from: seq_1 / msg #3
+  # marcar_ultimo_acesso(): void              ' from: seq_1 / msg #8
+}
+
+class "AuthController" as cls_auth <<control>> <<pattern:Facade>> {
+  - {static} MAX_TENTATIVAS: Integer = 3
+
+  + login(email: String, senha: String): Token ' from: seq_1 / msg #2
+  - validar_credenciais(u: Usuario, s: String): Boolean
+}
+
+class "Sessao" as cls_sessao <<entity>> <<pattern:Factory>> {
+  - {readOnly} id: UUID
+  - token: String
+  - expira_em: DateTime
+
+  + {static} criar(usuario: Usuario): Sessao  ' from: seq_1 / msg #5
+  + esta_expirada(): Boolean
+}
+
+class "LoginForm" as cls_form <<boundary>> {
+  + preenche(email: String, senha: String): void ' from: seq_1 / msg #1
+}
+
+cls_auth    ..>  cls_usuario  : usa
+cls_auth    ..>  cls_sessao   : cria
+cls_form    ..>  cls_auth     : chama
+
+@enduml
