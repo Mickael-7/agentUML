@@ -66,10 +66,8 @@ openspec/
 Thumbs.db
 desktop.ini
 
-# Output (generated diagrams)
-output/*.puml
-output/*.png
-output/*.svg
+# Output (todo gerado pelo pipeline)
+output/
 
 # PlantUML JAR (large binary, not versioned)
 tools/plantuml.jar
