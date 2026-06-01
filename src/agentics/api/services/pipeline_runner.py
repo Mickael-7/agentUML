@@ -54,6 +54,7 @@ def run_single_partition(
     validator_cli: PlantUMLValidator,
     sem_validator: SemanticValidator,
     critic: CriticAgent,
+    emit: Callable[[str, dict], None] | None = None,
 ) -> dict:
     """Run a single partition through the GVCR cycle. Returns result dict."""
     partition.pipeline_context = ctx
@@ -77,6 +78,7 @@ def run_single_partition(
         llm=llm, config=cfg, writer=writer,
         validator_cli=validator_cli,
         semantic_validator=sem_validator, critic=critic,
+        emit=emit,
     )
     try:
         path = agent.run(partition)
@@ -111,6 +113,7 @@ def run_phases(
     critic: CriticAgent,
     on_diagram_complete: Callable[[dict], None] | None = None,
     super_prompt_mode: bool = True,
+    emit: Callable[[str, dict], None] | None = None,
 ) -> tuple[list[dict], list[tuple[str, str]], PipelineContext]:
     """Execute all partitions through sequential phases with context accumulation.
 
@@ -148,6 +151,7 @@ def run_phases(
                 result = run_single_partition(
                     phase_list[0], ctx, cfg, llm, writer,
                     validator_cli, sem_validator, critic,
+                    emit=emit,
                 )
                 if on_diagram_complete:
                     on_diagram_complete(result)
@@ -168,6 +172,7 @@ def run_phases(
                         executor.submit(
                             run_single_partition, p, ctx, cfg, llm, writer,
                             validator_cli, sem_validator, critic,
+                            emit=emit,
                         ): p
                         for p in phase_list
                     }
@@ -198,6 +203,7 @@ def run_phases(
             result = run_single_partition(
                 partition, None, cfg, llm, writer,
                 validator_cli, sem_validator, critic,
+                emit=emit,
             )
             if on_diagram_complete:
                 on_diagram_complete(result)

@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from agentics.agents.critic import CriticAgent
@@ -105,6 +105,7 @@ class Agent(ABC):
         validator_cli: PlantUMLValidator,
         semantic_validator: SemanticValidator,
         critic: CriticAgent,
+        emit: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.llm = llm
         self.config = config
@@ -112,6 +113,7 @@ class Agent(ABC):
         self.validator_cli = validator_cli
         self.semantic_validator = semantic_validator
         self.critic = critic
+        self.emit = emit
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _load_prompt(self, name: str) -> str:
@@ -122,6 +124,26 @@ class Agent(ABC):
                 "Create the prompt file before running this agent."
             )
         return prompt_path.read_text(encoding="utf-8")
+
+    def _emit_diagram(
+        self,
+        diagram_id: str,
+        diagram_type: str,
+        name: str,
+        status: str = "generating",
+        **extra: object,
+    ) -> None:
+        """Emit a diagram SSE event with arbitrary extra fields."""
+        if self.emit is None:
+            return
+        payload: dict = {
+            "diagram_id": diagram_id,
+            "diagram_type": diagram_type,
+            "name": name,
+            "status": status,
+        }
+        payload.update(extra)
+        self.emit("diagram", payload)
 
     @staticmethod
     def _build_context_section(ctx: PipelineContext | None) -> str:
@@ -192,6 +214,9 @@ class Agent(ABC):
         if "_" in partition.partition_id:
             diagram_id = partition.partition_id
 
+        diagram_name = partition.name
+        diagram_type = partition.diagram_type
+
         self.logger.info("Starting GVCR cycle for %s", diagram_id)
 
         puml_text = ""
@@ -201,11 +226,25 @@ class Agent(ABC):
         max_retries = self.config.max_validation_retries
         for attempt in range(1, max_retries + 1):
             self.logger.info("[%s] Generation attempt %d/%d", diagram_id, attempt, max_retries)
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="generating",
+                attempt=attempt,
+                attempt_max=max_retries,
+            )
             messages = self.build_prompt(partition, error_context=error_ctx)
             raw = self.llm.complete(messages)
             puml_text = self.parse_output(raw)
 
             # Syntactic validation
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="validating_syntax",
+                attempt=attempt,
+                attempt_max=max_retries,
+            )
             is_valid, syntax_err = self.validator_cli.check(puml_text)
             if not is_valid:
                 self.logger.warning(
@@ -215,6 +254,13 @@ class Agent(ABC):
                 continue
 
             # Semantic validation
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="validating_semantics",
+                attempt=attempt,
+                attempt_max=max_retries,
+            )
             sem_result = self.semantic_validator.validate(puml_text, partition.diagram_type)
             if not sem_result.is_valid:
                 sem_errors = "; ".join(e.message for e in sem_result.errors)
@@ -250,6 +296,13 @@ class Agent(ABC):
 
         for round_num in range(max_refinements + 1):
             self.logger.info("[%s] Critique round %d/%d", diagram_id, round_num, max_refinements)
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="critiquing",
+                critic_round=round_num,
+                critic_round_max=max_refinements,
+            )
             critique = self.critic.evaluate(
                 puml_text=puml_text,
                 diagram_type=partition.diagram_type,
@@ -261,6 +314,12 @@ class Agent(ABC):
 
             if score >= threshold:
                 self.logger.info("[%s] Approved by critic. Saving.", diagram_id)
+                self._emit_diagram(
+                    diagram_id, diagram_type, diagram_name,
+                    status="completed",
+                    sub_status="completed",
+                    critic_score=score,
+                )
                 path = self.writer.write_puml(diagram_id, puml_text, draft=False)
                 return str(path)
 
@@ -275,6 +334,14 @@ class Agent(ABC):
                 return str(path)
 
             # Refine using critic feedback
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="refining",
+                critic_score=score,
+                critic_round=round_num,
+                critic_round_max=max_refinements,
+            )
             issues_text = "\n".join(f"- {i}" for i in critique.get("issues", []))
             suggestions_text = "\n".join(f"- {s}" for s in critique.get("suggestions", []))
             refinement_ctx = (

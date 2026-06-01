@@ -6,6 +6,12 @@ export interface DiagramInfo {
   error?: string;
   puml_text?: string | null;
   image_url?: string | null;
+  sub_status?: string;
+  attempt?: number;
+  attempt_max?: number;
+  critic_score?: number;
+  critic_round?: number;
+  critic_round_max?: number;
 }
 
 export interface JobStatus {

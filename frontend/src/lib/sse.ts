@@ -2,7 +2,19 @@ const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 interface SSEHandlers {
   onStatus?: (data: { status: string; message: string; total?: number }) => void;
-  onDiagram?: (data: { diagram_id: string; diagram_type: string; name: string; status: string; error?: string }) => void;
+  onDiagram?: (data: {
+    diagram_id: string;
+    diagram_type: string;
+    name: string;
+    status: string;
+    error?: string;
+    sub_status?: string;
+    attempt?: number;
+    attempt_max?: number;
+    critic_score?: number;
+    critic_round?: number;
+    critic_round_max?: number;
+  }) => void;
   onComplete?: (data: {
     job_id: string;
     exit_code: number;

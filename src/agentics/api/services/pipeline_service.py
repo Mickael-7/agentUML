@@ -138,6 +138,7 @@ class PipelineService:
                 critic=critic,
                 on_diagram_complete=on_diagram_complete,
                 super_prompt_mode=cfg.super_prompt_mode,
+                emit=self.emit,
             )
 
             # ── Step 5: Cross-validation ─────────────────────────────────────
