@@ -143,6 +143,9 @@ class Agent(ABC):
             "status": status,
         }
         payload.update(extra)
+        # Attach live token usage from the LLM client
+        if hasattr(self.llm, "token_usage") and self.llm.token_usage is not None:
+            payload["token_usage"] = self.llm.token_usage.to_dict()
         self.emit("diagram", payload)
 
     @staticmethod

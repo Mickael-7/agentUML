@@ -52,6 +52,10 @@ export function useJob() {
           setStatusMessage(d.message);
         },
         onDiagram: (d) => {
+          // Update live token usage from diagram events
+          if (d.token_usage) {
+            setTokenUsage(d.token_usage as TokenUsage);
+          }
           setDiagrams((prev) => {
             const idx = prev.findIndex((x) => x.diagram_id === d.diagram_id);
             if (idx >= 0) {

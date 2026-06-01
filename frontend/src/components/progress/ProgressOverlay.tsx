@@ -96,10 +96,10 @@ export function ProgressOverlay({ status, message, diagrams, tokenUsage }: Progr
           </div>
         )}
 
-        {tokenUsage && tokenUsage.total_tokens > 0 && (
+        {tokenUsage && (
           <div className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
             <Zap className="h-3 w-3 text-yellow-500" />
-            <span>{tokenUsage.total_tokens.toLocaleString()} tokens</span>
+            <span>{tokenUsage.total_tokens.toLocaleString()} tokens consumidos</span>
             <span className="text-muted-foreground/50">
               ({tokenUsage.prompt_tokens.toLocaleString()} in / {tokenUsage.completion_tokens.toLocaleString()} out / {tokenUsage.call_count} calls)
             </span>
