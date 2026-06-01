@@ -69,6 +69,10 @@ desktop.ini
 # Output (todo gerado pelo pipeline)
 output/
 
+# Runtime data (job queue, temp files)
+data/jobs/
+frontend/data/
+
 # PlantUML JAR (large binary, not versioned)
 tools/plantuml.jar
 

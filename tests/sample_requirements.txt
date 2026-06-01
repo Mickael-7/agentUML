@@ -1,0 +1,14 @@
+Sistema de Gerenciamento de Biblioteca
+
+1. O sistema deve permitir o cadastro de livros com título, autor, ISBN, editora e ano de publicação.
+2. O sistema deve permitir o cadastro de usuários com nome, e-mail, telefone e tipo (aluno, professor, funcionário).
+3. O sistema deve permitir que usuários realizem empréstimos de livros disponíveis.
+4. Cada empréstimo deve registrar a data de retirada, a data prevista de devolução e o usuário responsável.
+5. O sistema deve permitir a devolução de livros emprestados, registrando a data efetiva de devolução.
+6. O sistema deve calcular multas automaticamente para devoluções atrasadas, com base no número de dias de atraso.
+7. O sistema deve permitir a reserva de livros que estejam emprestados por outros usuários.
+8. Quando um livro reservado for devolvido, o sistema deve notificar o primeiro usuário da fila de reservas.
+9. O sistema deve permitir a busca de livros por título, autor ou ISBN.
+10. O sistema deve gerar relatórios de empréstimos por período, por usuário e por livro.
+11. O sistema deve diferenciar as regras de empréstimo por tipo de usuário: alunos (até 3 livros por 14 dias), professores (até 5 livros por 30 dias), funcionários (até 3 livros por 21 dias).
+12. O sistema deve manter um histórico de todas as transações de empréstimo e devolução.
