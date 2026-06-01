@@ -55,10 +55,10 @@ export default function App() {
           </h1>
           <div className="flex items-center gap-3">
             {tokenUsage && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded-md px-2 py-1">
-                <Zap className="h-3 w-3 text-yellow-500" />
-                <span>{tokenUsage.total_tokens.toLocaleString()} tokens</span>
-                <span className="text-muted-foreground/60">({tokenUsage.call_count} calls)</span>
+              <div className="flex items-center gap-1.5 text-sm text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded-md px-3 py-1.5 animate-pulse">
+                <Zap className="h-4 w-4 text-yellow-400" />
+                <span className="font-semibold">{tokenUsage.total_tokens.toLocaleString()} tokens</span>
+                <span className="text-yellow-500/70 text-xs">({tokenUsage.call_count} calls)</span>
               </div>
             )}
             <button

@@ -1,5 +1,12 @@
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
+interface TokenUsageData {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  call_count: number;
+}
+
 interface SSEHandlers {
   onStatus?: (data: { status: string; message: string; total?: number }) => void;
   onDiagram?: (data: {
@@ -14,6 +21,7 @@ interface SSEHandlers {
     critic_score?: number;
     critic_round?: number;
     critic_round_max?: number;
+    token_usage?: TokenUsageData;
   }) => void;
   onComplete?: (data: {
     job_id: string;
