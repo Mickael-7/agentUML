@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 import shutil
 from pathlib import Path
@@ -21,20 +22,38 @@ class Config:
         self.anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
         self.gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+        self.glm_api_key: str = os.getenv("GLM_API_KEY", "")
+        self.grok_api_key: str = os.getenv("GROK_API_KEY", "")
+        self.groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+
+        self.glm_base_url: str = os.getenv("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
+        self.grok_base_url: str = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1/")
+        self.groq_base_url: str = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1/")
 
         self.plantuml_jar: str = os.getenv("PLANTUML_JAR", "./tools/plantuml.jar")
         self.output_dir: Path = Path(os.getenv("OUTPUT_DIR", "./output"))
+
+        # Super-Prompt pipeline mode
+        self.super_prompt_mode: bool = os.getenv("SUPER_PROMPT_MODE", "true").lower() in ("true", "1", "yes")
+        self.enable_business_rules: bool = os.getenv("ENABLE_BUSINESS_RULES", "true").lower() in ("true", "1", "yes")
+
+    def copy(self) -> Config:
+        """Create a shallow copy of this config. Thread-safe for read-only attributes."""
+        return copy.copy(self)
 
     def validate_llm(self) -> None:
         key_map = {
             "anthropic": ("ANTHROPIC_API_KEY", self.anthropic_api_key),
             "openai": ("OPENAI_API_KEY", self.openai_api_key),
             "gemini": ("GEMINI_API_KEY", self.gemini_api_key),
+            "glm": ("GLM_API_KEY", self.glm_api_key),
+            "grok": ("GROK_API_KEY", self.grok_api_key),
+            "groq": ("GROQ_API_KEY", self.groq_api_key),
         }
         if self.llm_provider not in key_map:
             raise OSError(
                 f"Unknown LLM_PROVIDER '{self.llm_provider}'. "
-                "Choose from: anthropic, openai, gemini"
+                f"Choose from: {', '.join(key_map.keys())}"
             )
         env_var, value = key_map[self.llm_provider]
         if not value:
