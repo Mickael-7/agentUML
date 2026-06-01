@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,12 +20,55 @@ class ValidationError(Exception):
 
 
 @dataclass
+class PipelineContext:
+    """Accumulated context from prior pipeline phases (Super-Prompt methodology)."""
+
+    business_rules: str = ""
+    use_case_puml: str = ""
+    sequence_pumls: list[str] = field(default_factory=list)
+    domain_pumls: list[str] = field(default_factory=list)
+
+    def with_business_rules(self, rules: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=rules,
+            use_case_puml=self.use_case_puml,
+            sequence_pumls=list(self.sequence_pumls),
+            domain_pumls=list(self.domain_pumls),
+        )
+
+    def with_use_case(self, puml: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=self.business_rules,
+            use_case_puml=puml,
+            sequence_pumls=list(self.sequence_pumls),
+            domain_pumls=list(self.domain_pumls),
+        )
+
+    def with_sequence(self, puml: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=self.business_rules,
+            use_case_puml=self.use_case_puml,
+            sequence_pumls=self.sequence_pumls + [puml],
+            domain_pumls=list(self.domain_pumls),
+        )
+
+    def with_domain(self, puml: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=self.business_rules,
+            use_case_puml=self.use_case_puml,
+            sequence_pumls=list(self.sequence_pumls),
+            domain_pumls=self.domain_pumls + [puml],
+        )
+
+
+@dataclass
 class Partition:
     partition_id: str
     diagram_type: str
     requirements: list[str]
     name: str
     req_texts: dict[str, str] = None  # req_id -> full text
+    pipeline_context: PipelineContext = None  # accumulated context from prior phases
 
     def __post_init__(self):
         if self.req_texts is None:
@@ -80,13 +123,62 @@ class Agent(ABC):
             )
         return prompt_path.read_text(encoding="utf-8")
 
+    @staticmethod
+    def _build_context_section(ctx: PipelineContext | None) -> str:
+        """Build a markdown section with accumulated context from prior phases."""
+        if ctx is None:
+            return "(no prior context)"
+        parts = []
+        if ctx.business_rules:
+            parts.append(f"## Business Rules Extracted\n{ctx.business_rules}")
+        if ctx.use_case_puml:
+            parts.append(
+                f"## Use Case Diagram (previously generated)\n```plantuml\n{ctx.use_case_puml}\n```"
+            )
+        if ctx.sequence_pumls:
+            seq_text = "\n\n".join(f"```plantuml\n{s}\n```" for s in ctx.sequence_pumls)
+            parts.append(f"## Sequence Diagrams (previously generated)\n{seq_text}")
+        if ctx.domain_pumls:
+            dom_text = "\n\n".join(f"```plantuml\n{d}\n```" for d in ctx.domain_pumls)
+            parts.append(f"## Class Diagrams (previously generated)\n{dom_text}")
+        return "\n\n".join(parts) if parts else "(no prior context)"
+
     @abstractmethod
     def build_prompt(self, partition: Partition, error_context: str = "") -> list[dict]:
         """Return the messages list for the LLM."""
 
+    def build_prompt_from_template(self, partition: Partition, template_name: str, error_context: str = "") -> list[dict]:
+        """Build prompt from a template file with standard placeholder substitution."""
+        import re
+        template = self._load_prompt(template_name)
+        diagram_id = partition.partition_id
+        req_list = ", ".join(partition.requirements)
+        req_lines = "\n".join(
+            f"{rid}: {partition.req_texts.get(rid, '(no text)')}"
+            for rid in partition.requirements
+        )
+        context_section = self._build_context_section(partition.pipeline_context)
+        prompt = (
+            template.replace("{diagram_id}", diagram_id)
+            .replace("{diagram_name}", partition.name)
+            .replace("{req_list}", req_list)
+            .replace("{requirements}", req_lines)
+            .replace("{accumulated_context}", context_section)
+            .replace("{error_context}", error_context or "(none)")
+        )
+        return [{"role": "user", "content": prompt}]
+
     @abstractmethod
     def parse_output(self, raw: str) -> str:
         """Extract clean PlantUML text from LLM response."""
+
+    def parse_puml_output(self, raw: str) -> str:
+        """Extract PlantUML code between @startuml/@enduml tags."""
+        import re
+        match = re.search(r"(@startuml.*?@enduml)", raw, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return raw.strip()
 
     def run(self, partition: Partition) -> str:
         if self.diagram_type and partition.diagram_type != self.diagram_type:
@@ -147,13 +239,22 @@ class Agent(ABC):
         max_refinements = self.config.max_refinement_rounds
         threshold = self.config.critic_score_threshold
 
+        # Build related_diagrams from pipeline context
+        related: list[str] = []
+        if partition.pipeline_context:
+            ctx = partition.pipeline_context
+            if ctx.use_case_puml:
+                related.append(ctx.use_case_puml)
+            related.extend(ctx.sequence_pumls)
+            related.extend(ctx.domain_pumls)
+
         for round_num in range(max_refinements + 1):
             self.logger.info("[%s] Critique round %d/%d", diagram_id, round_num, max_refinements)
             critique = self.critic.evaluate(
                 puml_text=puml_text,
                 diagram_type=partition.diagram_type,
                 requirements=partition.requirements,
-                related_diagrams=[],
+                related_diagrams=related,
             )
             score = critique["score"]
             self.logger.info("[%s] Critic score=%d (threshold=%d)", diagram_id, score, threshold)
