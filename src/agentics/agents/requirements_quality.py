@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from agentics.llm.parse_json import parse_llm_json
 
 if TYPE_CHECKING:
     from agentics.llm.base import LLMClient
@@ -23,7 +23,7 @@ class RequirementsQualityAgent:
         if not requirements_text or not requirements_text.strip():
             return {
                 "is_valid": False,
-                "report": "O documento de requisitos está vazio.",
+                "report": "The requirements document is empty.",
             }
         prompt = self._prompt_template.replace("{requirements_text}", requirements_text)
         messages = [{"role": "user", "content": prompt}]
@@ -31,20 +31,13 @@ class RequirementsQualityAgent:
         return self._parse_response(raw)
 
     def _parse_response(self, raw: str) -> dict:
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            self.logger.error("RequirementsQualityAgent did not return JSON: %s", raw[:300])
-            return {
-                "is_valid": False,
-                "report": f"Falha ao parsear resposta do agente: {raw[:300]}",
-            }
         try:
-            data = json.loads(match.group())
-        except json.JSONDecodeError:
+            data = parse_llm_json(raw, "RequirementsQualityAgent")
+        except ValueError as e:
+            self.logger.error("RequirementsQualityAgent parse failed: %s", e)
             return {
                 "is_valid": False,
-                "report": f"JSON inválido na resposta do agente: {raw[:300]}",
+                "report": f"Failed to parse agent response: {e}",
             }
         return {
             "is_valid": bool(data.get("is_valid", False)),

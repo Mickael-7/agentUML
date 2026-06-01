@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from agentics.agents.base import Agent, Partition
 
 
@@ -9,27 +7,10 @@ class SpecializationAgent(Agent):
     diagram_type = "specialized_class"
 
     def build_prompt(self, partition: Partition, error_context: str = "") -> list[dict]:
-        template = self._load_prompt("specialization.md")
-        diagram_id = partition.partition_id
-        req_list = ", ".join(partition.requirements)
-        req_lines = "\n".join(
-            f"{rid}: {partition.req_texts.get(rid, '(sem texto)')}"
-            for rid in partition.requirements
-        )
-        prompt = (
-            template.replace("{diagram_id}", diagram_id)
-            .replace("{diagram_name}", partition.name)
-            .replace("{req_list}", req_list)
-            .replace("{requirements}", req_lines)
-            .replace("{error_context}", error_context or "(nenhum)")
-        )
-        return [{"role": "user", "content": prompt}]
+        return self.build_prompt_from_template(partition, "specialization.md", error_context)
 
     def parse_output(self, raw: str) -> str:
-        match = re.search(r"(@startuml.*?@enduml)", raw, re.DOTALL | re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-        return raw.strip()
+        return self.parse_puml_output(raw)
 
 
 if __name__ == "__main__":
