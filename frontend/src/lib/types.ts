@@ -39,3 +39,22 @@ export interface HistoryJob {
   created_at: string;
   diagrams: DiagramInfo[];
 }
+
+export interface QualityDimension {
+  highlights: string[];
+  issues: string[];
+}
+
+export interface QualityReport {
+  clarity: QualityDimension;
+  completeness: QualityDimension;
+  consistency: QualityDimension;
+  verifiability: QualityDimension;
+  summary: string;
+  suggestions: string[];
+}
+
+export interface QualityResult {
+  is_valid: boolean;
+  report: QualityReport;
+}

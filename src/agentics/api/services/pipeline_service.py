@@ -73,7 +73,9 @@ class PipelineService:
             quality_result = quality_agent.evaluate(text)
 
             if not quality_result["is_valid"]:
-                self.emit("error", {"message": f"Quality gate failed: {quality_result['report']}"})
+                report = quality_result.get("report", {})
+                summary = report.get("summary", str(report)) if isinstance(report, dict) else str(report)
+                self.emit("error", {"message": f"Quality gate failed: {summary}"})
                 return 1
 
             # ── Step 2: Partitioning ──────────────────────────────────────────

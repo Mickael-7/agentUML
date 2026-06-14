@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agentics.api.routers import config_routes, diagrams, generate, history
+from agentics.api.routers import config_routes, diagrams, generate, history, quality
 from agentics.api.services.job_store import JobStore
 from agentics.config import Config
 
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(diagrams.router, prefix="/api")
     app.include_router(config_routes.router, prefix="/api")
     app.include_router(history.router, prefix="/api")
+    app.include_router(quality.router, prefix="/api")
 
     @app.get("/api/health")
     async def health():

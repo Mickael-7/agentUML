@@ -60,3 +60,20 @@ export async function getHistory(limit = 20, offset = 0): Promise<{ jobs: import
 export async function deleteJob(jobId: string): Promise<void> {
   await apiFetch(`${BASE_URL}/api/history/${jobId}`, { method: "DELETE" });
 }
+
+export async function analyzeQuality(text: string, file?: File): Promise<import("./types").QualityResult> {
+  const formData = new FormData();
+  if (text) formData.append("text", text);
+  if (file) formData.append("file", file);
+  const res = await apiFetch(`${BASE_URL}/api/quality`, { method: "POST", body: formData });
+  return res.json();
+}
+
+export async function downloadQualityPdf(result: import("./types").QualityResult): Promise<Blob> {
+  const res = await apiFetch(`${BASE_URL}/api/quality/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(result),
+  });
+  return res.blob();
+}

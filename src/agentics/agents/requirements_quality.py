@@ -23,11 +23,18 @@ class RequirementsQualityAgent:
         if not requirements_text or not requirements_text.strip():
             return {
                 "is_valid": False,
-                "report": "The requirements document is empty.",
+                "report": {
+                    "clarity":       {"highlights": [], "issues": []},
+                    "completeness":  {"highlights": [], "issues": []},
+                    "consistency":   {"highlights": [], "issues": []},
+                    "verifiability": {"highlights": [], "issues": []},
+                    "summary": "O documento de requisitos está vazio.",
+                    "suggestions": ["Forneça um documento com descrição do sistema e seus requisitos."],
+                },
             }
         prompt = self._prompt_template.replace("{requirements_text}", requirements_text)
         messages = [{"role": "user", "content": prompt}]
-        raw = self.llm.complete(messages, temperature=0.1)
+        raw = self.llm.complete(messages, temperature=0.1, max_tokens=16384)
         return self._parse_response(raw)
 
     def _parse_response(self, raw: str) -> dict:
@@ -37,11 +44,41 @@ class RequirementsQualityAgent:
             self.logger.error("RequirementsQualityAgent parse failed: %s", e)
             return {
                 "is_valid": False,
-                "report": f"Failed to parse agent response: {e}",
+                "report": {
+                    "clarity":       {"highlights": [], "issues": []},
+                    "completeness":  {"highlights": [], "issues": []},
+                    "consistency":   {"highlights": [], "issues": []},
+                    "verifiability": {"highlights": [], "issues": []},
+                    "summary": f"Falha ao analisar a resposta do agente: {e}",
+                    "suggestions": [],
+                },
             }
+
+        report = data.get("report", {})
+
+        # Normalise: accept old format with "score" field or plain string
+        if isinstance(report, str):
+            report = {
+                "clarity":       {"highlights": [], "issues": []},
+                "completeness":  {"highlights": [], "issues": []},
+                "consistency":   {"highlights": [], "issues": []},
+                "verifiability": {"highlights": [], "issues": []},
+                "summary": report,
+                "suggestions": [],
+            }
+        else:
+            for dim in ("clarity", "completeness", "consistency", "verifiability"):
+                if dim in report and isinstance(report[dim], dict):
+                    report[dim].pop("score", None)
+                    if "highlights" not in report[dim]:
+                        report[dim]["highlights"] = []
+                    if "issues" not in report[dim]:
+                        report[dim]["issues"] = []
+
         return {
             "is_valid": bool(data.get("is_valid", False)),
-            "report": str(data.get("report", "")),
+            "report": report,
+            # _reasoning is internal chain-of-thought — strip it from the response
         }
 
     def __call__(self, requirements_text: str) -> dict:
