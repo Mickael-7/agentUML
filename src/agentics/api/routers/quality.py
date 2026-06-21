@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
-
-import shutil
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from agentics.agents.requirements_quality import RequirementsQualityAgent
+from agentics.agents.use_case_evaluator import UseCaseDocumentEvaluator
+from agentics.api.models import UseCaseEvaluationRequest
 from agentics.config import Config
 from agentics.llm.base import create_llm_client
+from agentics.validators.plantuml_cli import PlantUMLValidator
+from agentics.validators.semantic import SemanticValidator
 
 router = APIRouter()
 
@@ -71,7 +74,7 @@ async def analyze_quality(
     try:
         config.validate_llm()
     except OSError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
     llm = create_llm_client(config)
     agent = RequirementsQualityAgent(llm)
@@ -88,11 +91,107 @@ async def quality_pdf(body: dict, background_tasks: BackgroundTasks) -> FileResp
         pdf_path = generate_quality_pdf(body, tmp_dir)
     except Exception as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}") from e
 
     background_tasks.add_task(shutil.rmtree, tmp_dir, True)
     return FileResponse(
         path=str(pdf_path),
         media_type="application/pdf",
         filename="quality_report.pdf",
+    )
+
+
+@router.post("/quality/use-cases")
+async def evaluate_use_case_documents(
+    request: Request,
+    body: UseCaseEvaluationRequest,
+) -> dict:
+    """Evaluate a batch of use-case documents and classify each as correct/incorrect."""
+    if not body.documents:
+        raise HTTPException(status_code=422, detail="No documents provided")
+
+    config: Config = request.app.state.config
+    try:
+        config.validate_llm()
+    except OSError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    # Apply the optional max_documents cap (take the FIRST N — do not let the LLM
+    # pick "essentials", which would break the user's ground-truth labels).
+    docs_in = body.documents
+    if body.max_documents is not None and body.max_documents > 0:
+        docs_in = docs_in[: body.max_documents]
+
+    llm = create_llm_client(config)
+    agent = UseCaseDocumentEvaluator(
+        llm,
+        plantuml_validator=PlantUMLValidator(config),
+        semantic_validator=SemanticValidator(),
+    )
+    evaluated = agent.evaluate_documents([d.model_dump() for d in docs_in])
+
+    # Merge evaluated results with input metadata and compute accuracy over the
+    # labeled subset only.
+    documents = []
+    correct = 0
+    labeled_hits = 0
+    labeled_total = 0
+    for src, res in zip(docs_in, evaluated, strict=True):
+        verdict = res.get("verdict", "incorrect")
+        if verdict == "correct":
+            correct += 1
+        expected = src.expected_verdict
+        if expected is None:
+            matches = None
+        else:
+            labeled_total += 1
+            matches = verdict == expected
+            if matches:
+                labeled_hits += 1
+        documents.append(
+            {
+                "name": src.name,
+                "verdict": verdict,
+                "checks": res.get("checks", {}),
+                "errors": res.get("errors", []),
+                "justification": res.get("justification", ""),
+                "correction": res.get("correction", ""),
+                "summary": res.get("summary", ""),
+                "expected_verdict": expected,
+                "matches_expected": matches,
+            }
+        )
+
+    evaluated_count = len(documents)
+    accuracy = round(100 * labeled_hits / labeled_total, 1) if labeled_total else None
+
+    return {
+        "summary": {
+            "total": len(body.documents),
+            "evaluated": evaluated_count,
+            "correct": correct,
+            "incorrect": evaluated_count - correct,
+            "accuracy": accuracy,
+        },
+        "documents": documents,
+    }
+
+
+@router.post("/quality/use-cases/pdf")
+async def use_case_eval_pdf(body: dict, background_tasks: BackgroundTasks) -> FileResponse:
+    """Accept a use-case evaluation result JSON and return a downloadable PDF."""
+    from agentics.io.pdf_report import generate_use_case_eval_pdf
+
+    tmp_dir = Path(tempfile.mkdtemp())
+    try:
+        pdf_path = generate_use_case_eval_pdf(body, tmp_dir)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}") from e
+
+    background_tasks.add_task(shutil.rmtree, tmp_dir, True)
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename="use_case_evaluation.pdf",
     )

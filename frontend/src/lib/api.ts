@@ -77,3 +77,24 @@ export async function downloadQualityPdf(result: import("./types").QualityResult
   });
   return res.blob();
 }
+
+export async function evaluateUseCaseDocuments(
+  documents: import("./types").UseCaseDocInput[],
+  maxDocuments?: number,
+): Promise<import("./types").UseCaseEvalResult> {
+  const res = await apiFetch(`${BASE_URL}/api/quality/use-cases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ documents, max_documents: maxDocuments ?? null }),
+  });
+  return res.json();
+}
+
+export async function downloadUseCaseEvalPdf(result: import("./types").UseCaseEvalResult): Promise<Blob> {
+  const res = await apiFetch(`${BASE_URL}/api/quality/use-cases/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(result),
+  });
+  return res.blob();
+}

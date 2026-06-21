@@ -5,7 +5,7 @@ import { InputPanel } from "@/components/input-panel/InputPanel";
 import { VisualizationPanel } from "@/components/visualization/VisualizationPanel";
 import { ProgressOverlay } from "@/components/progress/ProgressOverlay";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
-import { QualityPanel } from "@/components/quality/QualityPanel";
+import { QualityView } from "@/components/quality/QualityView";
 import { useJob } from "@/hooks/useJob";
 import { getHistory } from "@/lib/api";
 import { Toaster, toast } from "sonner";
@@ -118,7 +118,7 @@ export default function App() {
               )}
             </>
           ) : (
-            <QualityPanel />
+            <QualityView />
           )}
         </div>
       </div>

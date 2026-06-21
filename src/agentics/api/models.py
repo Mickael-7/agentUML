@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -54,3 +55,14 @@ class ConfigUpdateRequest(BaseModel):
     provider: LLMProviderEnum | None = None
     model: str | None = None
     temperature: float | None = None
+
+
+class UseCaseDocumentIn(BaseModel):
+    name: str
+    text: str
+    expected_verdict: Literal["correct", "incorrect"] | None = None
+
+
+class UseCaseEvaluationRequest(BaseModel):
+    documents: list[UseCaseDocumentIn]
+    max_documents: int | None = None

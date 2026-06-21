@@ -58,3 +58,42 @@ export interface QualityResult {
   is_valid: boolean;
   report: QualityReport;
 }
+
+export type Verdict = "correct" | "incorrect";
+
+export interface UseCaseChecks {
+  has_requirement: boolean;
+  has_use_case_context: boolean;
+  symbology_correct: boolean | null;
+}
+
+export interface UseCaseDocResult {
+  name: string;
+  verdict: Verdict;
+  checks: UseCaseChecks;
+  errors: string[];
+  justification: string;
+  correction: string;
+  summary?: string;
+  expected_verdict?: Verdict | null;
+  matches_expected?: boolean | null;
+}
+
+export interface UseCaseEvalSummary {
+  total: number;
+  evaluated: number;
+  correct: number;
+  incorrect: number;
+  accuracy: number | null;
+}
+
+export interface UseCaseEvalResult {
+  summary: UseCaseEvalSummary;
+  documents: UseCaseDocResult[];
+}
+
+export interface UseCaseDocInput {
+  name: string;
+  text: string;
+  expected_verdict: Verdict | null;
+}
