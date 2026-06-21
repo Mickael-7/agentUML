@@ -98,3 +98,20 @@ export async function downloadUseCaseEvalPdf(result: import("./types").UseCaseEv
   });
   return res.blob();
 }
+
+export async function analyzeAll(text: string, file?: File): Promise<import("./types").FullAnalysisResult> {
+  const formData = new FormData();
+  if (text) formData.append("text", text);
+  if (file) formData.append("file", file);
+  const res = await apiFetch(`${BASE_URL}/api/quality/analyze-all`, { method: "POST", body: formData });
+  return res.json();
+}
+
+export async function downloadAnalysisPdf(result: import("./types").FullAnalysisResult): Promise<Blob> {
+  const res = await apiFetch(`${BASE_URL}/api/quality/analyze-all/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(result),
+  });
+  return res.blob();
+}

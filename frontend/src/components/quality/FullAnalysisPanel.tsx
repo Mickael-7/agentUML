@@ -1,119 +1,32 @@
 import { useState, useRef } from "react";
-import { FileText, Upload, ShieldCheck, AlertCircle, Lightbulb, Loader2, Download, CheckCircle2, XCircle, ThumbsUp } from "lucide-react";
+import {
+  FileText,
+  Upload,
+  Loader2,
+  Download,
+  Layers,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { analyzeQuality, downloadQualityPdf } from "@/lib/api";
-import type { QualityResult, QualityReport, QualityDimension } from "@/lib/types";
+import { analyzeAll, downloadAnalysisPdf } from "@/lib/api";
+import type { FullAnalysisResult } from "@/lib/types";
+import { RequirementsReportView } from "@/components/quality/QualityPanel";
+import { ResultsTable } from "@/components/quality/UseCaseEvalPanel";
 import { toast } from "sonner";
 
-const DIMENSION_LABELS: Record<string, string> = {
-  clarity: "Clareza",
-  completeness: "Completude",
-  consistency: "Consistência",
-  verifiability: "Verificabilidade",
-};
-
-const DIMENSION_ORDER = ["clarity", "completeness", "consistency", "verifiability"] as const;
-
-function DimensionCard({ dimension, data }: { dimension: string; data: QualityDimension }) {
-  const label = DIMENSION_LABELS[dimension] ?? dimension;
-  const hasIssues = data.issues.length > 0;
-  const hasHighlights = (data.highlights ?? []).length > 0;
-
+function StatChip({ label, value, tone = "muted" }: { label: string; value: string; tone?: "muted" | "emerald" | "red" | "blue" }) {
+  const toneClass = {
+    muted: "border-border text-foreground",
+    emerald: "border-emerald-500/30 text-emerald-300 bg-emerald-500/5",
+    red: "border-red-500/30 text-red-300 bg-red-500/5",
+    blue: "border-blue-500/30 text-blue-300 bg-blue-500/5",
+  }[tone];
   return (
-    <div className={`rounded-lg border p-3 space-y-2 ${hasIssues ? "border-amber-500/20 bg-amber-500/5" : "border-emerald-500/20 bg-emerald-500/5"}`}>
-      <div className="flex items-center gap-2">
-        {hasIssues
-          ? <XCircle className="h-4 w-4 shrink-0 text-amber-400" />
-          : <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-        }
-        <span className={`text-sm font-semibold ${hasIssues ? "text-amber-300" : "text-emerald-300"}`}>{label}</span>
-      </div>
-
-      {hasHighlights && (
-        <ul className="space-y-1 pl-1">
-          {(data.highlights ?? []).map((h, i) => (
-            <li key={i} className="flex items-start gap-1.5 text-xs text-emerald-400/80">
-              <ThumbsUp className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
-              {h}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {hasIssues && (
-        <ul className="space-y-1 pl-1">
-          {data.issues.map((issue, i) => (
-            <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
-              {issue}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-export function RequirementsReportView({ report }: { report: QualityReport }) {
-  return (
-    <>
-      {/* Summary */}
-      <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resumo</p>
-        <p className="text-sm leading-relaxed text-foreground">{report.summary}</p>
-      </div>
-
-      {/* Dimensions */}
-      <div>
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Avaliação por Dimensão</p>
-        <div className="grid grid-cols-1 gap-3">
-          {DIMENSION_ORDER.map((dim) =>
-            report[dim] ? <DimensionCard key={dim} dimension={dim} data={report[dim]} /> : null
-          )}
-        </div>
-      </div>
-
-      {/* Suggestions */}
-      {report.suggestions.length > 0 && (
-        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-blue-400">Sugestões de Melhoria</p>
-          <ol className="space-y-2">
-            {report.suggestions.map((s, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />
-                {s}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-    </>
-  );
-}
-
-function QualityResults({ result, onDownload, isDownloading }: {
-  result: QualityResult;
-  onDownload: () => void;
-  isDownloading: boolean;
-}) {
-  const { report } = result;
-
-  return (
-    <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
-      {/* Download button */}
-      <div className="flex justify-end">
-        <Button onClick={onDownload} disabled={isDownloading} variant="outline" size="sm" className="gap-2">
-          {isDownloading
-            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : <Download className="h-3.5 w-3.5" />
-          }
-          {isDownloading ? "Gerando PDF..." : "Baixar PDF"}
-        </Button>
-      </div>
-
-      <RequirementsReportView report={report} />
+    <div className={`rounded-md border px-3 py-1.5 ${toneClass}`}>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">{label}</span>
+      <div className="text-sm font-semibold">{value}</div>
     </div>
   );
 }
@@ -121,21 +34,74 @@ function QualityResults({ result, onDownload, isDownloading }: {
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <ShieldCheck className="h-14 w-14 text-muted-foreground/30" />
-      <p className="text-base font-medium text-muted-foreground">Análise de Qualidade</p>
-      <p className="max-w-xs text-sm text-muted-foreground/60">
-        Insira o documento de requisitos e clique em Analisar para ver o relatório de qualidade.
+      <Sparkles className="h-14 w-14 text-muted-foreground/30" />
+      <p className="text-base font-medium text-muted-foreground">Análise Integrada</p>
+      <p className="max-w-sm text-sm text-muted-foreground/60">
+        Cole um documento de requisitos. O sistema avalia a qualidade dos requisitos, extrai os casos de uso e avalia cada
+        um — tudo num clique.
       </p>
     </div>
   );
 }
 
-export function QualityPanel() {
+function FullResults({
+  result,
+  onDownload,
+  isDownloading,
+}: {
+  result: FullAnalysisResult;
+  onDownload: () => void;
+  isDownloading: boolean;
+}) {
+  const { requirements, use_cases, summary } = result;
+  const isValid = requirements.is_valid;
+
+  return (
+    <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatChip label="Requisitos" value={isValid ? "Aprovado" : "Reprovado"} tone={isValid ? "emerald" : "red"} />
+          <StatChip label="Casos de uso" value={String(summary.use_cases_found)} />
+          <StatChip label="Corretos" value={String(summary.correct)} tone="emerald" />
+          <StatChip label="Incorretos" value={String(summary.incorrect)} tone="red" />
+        </div>
+        <Button onClick={onDownload} disabled={isDownloading} variant="outline" size="sm" className="gap-2">
+          {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {isDownloading ? "Gerando PDF..." : "Baixar PDF"}
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <FileText className="h-4 w-4 text-primary" />
+          Qualidade dos Requisitos
+        </div>
+        <RequirementsReportView report={requirements.report} />
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Layers className="h-4 w-4 text-primary" />
+          Casos de Uso Extraídos
+        </div>
+        {use_cases.length > 0 ? (
+          <ResultsTable docs={use_cases} />
+        ) : (
+          <p className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+            Nenhum caso de uso identificado no documento.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function FullAnalysisPanel() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [result, setResult] = useState<QualityResult | null>(null);
+  const [result, setResult] = useState<FullAnalysisResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -143,7 +109,6 @@ export function QualityPanel() {
     const dropped = e.dataTransfer.files[0];
     if (dropped) setFile(dropped);
   };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (selected) setFile(selected);
@@ -154,10 +119,10 @@ export function QualityPanel() {
     setIsLoading(true);
     setResult(null);
     try {
-      const res = await analyzeQuality(text, file);
+      const res = await analyzeAll(text, file);
       setResult(res);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao analisar requisitos");
+      toast.error(err instanceof Error ? err.message : "Erro ao analisar o documento");
     } finally {
       setIsLoading(false);
     }
@@ -167,11 +132,11 @@ export function QualityPanel() {
     if (!result) return;
     setIsDownloading(true);
     try {
-      const blob = await downloadQualityPdf(result);
+      const blob = await downloadAnalysisPdf(result);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "quality_report.pdf";
+      a.download = "analysis_report.pdf";
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -187,6 +152,9 @@ export function QualityPanel() {
       <div className="w-[400px] shrink-0 border-r border-border overflow-y-auto">
         <div className="flex h-full flex-col gap-4 p-4">
           <h2 className="text-lg font-semibold text-foreground">Documento de Requisitos</h2>
+          <p className="-mt-2 text-xs text-muted-foreground/70">
+            Análise integrada em um clique: qualidade dos requisitos + extração e avaliação dos casos de uso.
+          </p>
 
           <Tabs defaultValue="text" className="flex-1 flex flex-col">
             <TabsList className="w-full">
@@ -202,7 +170,7 @@ export function QualityPanel() {
 
             <TabsContent value="text" className="flex-1 mt-2">
               <Textarea
-                placeholder="Cole aqui os requisitos do sistema..."
+                placeholder="Cole aqui o documento de requisitos do sistema..."
                 className="h-full min-h-[300px] resize-none"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -240,9 +208,13 @@ export function QualityPanel() {
             className="w-full gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
           >
             {isLoading ? (
-              <><Loader2 className="h-4 w-4 animate-spin" />Analisando...</>
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Analisando...
+              </>
             ) : (
-              <><ShieldCheck className="h-4 w-4" />Analisar Qualidade</>
+              <>
+                <Sparkles className="h-4 w-4" /> Analisar Tudo
+              </>
             )}
           </Button>
         </div>
@@ -253,10 +225,10 @@ export function QualityPanel() {
         {isLoading ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Analisando documento...</p>
+            <p className="text-sm text-muted-foreground">Analisando requisitos e casos de uso...</p>
           </div>
         ) : result ? (
-          <QualityResults result={result} onDownload={handleDownload} isDownloading={isDownloading} />
+          <FullResults result={result} onDownload={handleDownload} isDownloading={isDownloading} />
         ) : (
           <EmptyState />
         )}

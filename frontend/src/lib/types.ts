@@ -97,3 +97,15 @@ export interface UseCaseDocInput {
   text: string;
   expected_verdict: Verdict | null;
 }
+
+export interface FullAnalysisSummary {
+  use_cases_found: number;
+  correct: number;
+  incorrect: number;
+}
+
+export interface FullAnalysisResult {
+  requirements: QualityResult;
+  use_cases: UseCaseDocResult[];
+  summary: FullAnalysisSummary;
+}

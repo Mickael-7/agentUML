@@ -180,7 +180,7 @@ function DocumentEntry({
 }
 
 // ── Results table ──────────────────────────────────────────────────────────────
-function ResultsTable({ docs }: { docs: UseCaseDocResult[] }) {
+export function ResultsTable({ docs }: { docs: UseCaseDocResult[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const toggle = (i: number) => setExpanded((cur) => (cur === i ? null : i));
 

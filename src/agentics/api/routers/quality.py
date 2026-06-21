@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 
 from agentics.agents.requirements_quality import RequirementsQualityAgent
 from agentics.agents.use_case_evaluator import UseCaseDocumentEvaluator
+from agentics.agents.use_case_extractor import UseCaseExtractorAgent
 from agentics.api.models import UseCaseEvaluationRequest
 from agentics.config import Config
 from agentics.llm.base import create_llm_client
@@ -194,4 +195,89 @@ async def use_case_eval_pdf(body: dict, background_tasks: BackgroundTasks) -> Fi
         path=str(pdf_path),
         media_type="application/pdf",
         filename="use_case_evaluation.pdf",
+    )
+
+
+@router.post("/quality/analyze-all")
+async def analyze_all(
+    request: Request,
+    text: str = Form(None),
+    file: UploadFile = File(None),
+) -> dict:
+    """Integrated pipeline: requirements quality + extract & evaluate each use case."""
+    req_text = text or ""
+    if file and not req_text.strip():
+        req_text = await _read_upload(file)
+
+    if not req_text.strip():
+        raise HTTPException(status_code=422, detail="No requirements text provided")
+
+    config: Config = request.app.state.config
+    try:
+        config.validate_llm()
+    except OSError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    llm = create_llm_client(config)
+
+    # 1) Overall requirements quality (4 dimensions).
+    requirements = RequirementsQualityAgent(llm).evaluate(req_text)
+
+    # 2) Extract the use cases described in the document.
+    use_cases_in = UseCaseExtractorAgent(llm).extract(req_text)
+
+    # 3) Evaluate each extracted use case (parallel internally).
+    evaluator = UseCaseDocumentEvaluator(
+        llm,
+        plantuml_validator=PlantUMLValidator(config),
+        semantic_validator=SemanticValidator(),
+    )
+    evaluated = evaluator.evaluate_documents([{"text": uc["text"]} for uc in use_cases_in])
+
+    use_cases = []
+    correct = 0
+    for src, res in zip(use_cases_in, evaluated, strict=True):
+        verdict = res.get("verdict", "incorrect")
+        if verdict == "correct":
+            correct += 1
+        use_cases.append(
+            {
+                "name": src.get("name", ""),
+                "verdict": verdict,
+                "checks": res.get("checks", {}),
+                "errors": res.get("errors", []),
+                "justification": res.get("justification", ""),
+                "correction": res.get("correction", ""),
+                "summary": res.get("summary", ""),
+            }
+        )
+
+    return {
+        "requirements": requirements,
+        "use_cases": use_cases,
+        "summary": {
+            "use_cases_found": len(use_cases),
+            "correct": correct,
+            "incorrect": len(use_cases) - correct,
+        },
+    }
+
+
+@router.post("/quality/analyze-all/pdf")
+async def analyze_all_pdf(body: dict, background_tasks: BackgroundTasks) -> FileResponse:
+    """Accept an integrated-analysis result JSON and return a downloadable PDF."""
+    from agentics.io.pdf_report import generate_analysis_pdf
+
+    tmp_dir = Path(tempfile.mkdtemp())
+    try:
+        pdf_path = generate_analysis_pdf(body, tmp_dir)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}") from e
+
+    background_tasks.add_task(shutil.rmtree, tmp_dir, True)
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename="analysis_report.pdf",
     )
