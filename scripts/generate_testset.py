@@ -125,22 +125,30 @@ BASE_DOCS = [
 # 5 defect transforms (applied in sequence, one per incorrect document).
 # Each breaks exactly one check.
 # ──────────────────────────────────────────────────────────────────────────────
-def defect_no_requirement(d: dict) -> dict:
-    """Replace the testable requirement with vague marketing text."""
-    d["requirement"] = (
-        "Sistema moderno, intuitivo e facil de usar, com uma excelente experiencia "
-        "para o usuario."
-    )
+def defect_state_notation(d: dict) -> dict:
+    """Valid PlantUML, but STATE-diagram notation instead of use-case notation."""
+    d["puml_override"] = """@startuml
+state Aguardando
+state Autenticando
+state Autenticado
+Aguardando --> Autenticando : submeter credenciais
+Autenticando --> Autenticado : credenciais validas
+Autenticando --> Aguardando : credenciais invalidas
+@enduml"""
     return d
 
 
 def defect_no_context(d: dict) -> dict:
-    """Remove the textual scenario (actor/objetivo/fluxo) -> 'loose diagram'.
+    """Replace the document with a bare feature list — no actor, no flow, no
+    goal, no requirement, no diagram.
 
-    The diagram stays valid, but the document no longer describes a use-case
-    context (actor + flow + goal) in prose, so has_use_case_context fails.
+    A 'list of features' is explicitly NOT a use-case context, so
+    has_use_case_context (and has_requirement) fail. Removing only the textual
+    scenario while keeping a valid requirement + diagram is NOT enough: a real
+    requirement already conveys actor + behaviour, so the evaluator (correctly)
+    still sees a use case. This is the unambiguous 'no context' defect.
     """
-    d["omit_context"] = True
+    d["feature_list"] = True
     return d
 
 
@@ -188,11 +196,11 @@ S --> Usuario : resultado
 
 
 DEFECTS = [
-    ("sem_requisito", "has_requirement", defect_no_requirement),
-    ("sem_contexto", "has_use_case_context", defect_no_context),
+    ("sem_cenario", "has_use_case_context", defect_no_context),
     ("sintaxe_invalida", "symbology_correct", defect_syntax),
     ("notacao_classe", "symbology_correct", defect_class_notation),
     ("notacao_sequencia", "symbology_correct", defect_sequence_notation),
+    ("notacao_estado", "symbology_correct", defect_state_notation),
 ]
 
 
@@ -217,6 +225,13 @@ def render_puml(d: dict) -> str:
 
 
 def render_md(d: dict) -> str:
+    if d.get("feature_list"):
+        # Bare feature list: title + bullets, no actor/flow/goal/requirement/diagram.
+        parts = [f"# {d['title']}"]
+        for label, _uid in d["ucs"]:
+            parts.append(f"- {label}")
+        return "\n".join(parts) + "\n"
+
     parts = [f"# Caso de Uso: {d['title']}"]
     if not d.get("omit_context"):
         parts += ["", f"Ator principal: {d['actor']}", f"Objetivo: {d['goal']}", "", "Fluxo principal:"]
@@ -228,6 +243,10 @@ def render_md(d: dict) -> str:
 def main() -> None:
     out = Path(__file__).resolve().parent.parent / "testset"
     out.mkdir(exist_ok=True)
+    # Clean stale files from previous runs so the folder always reflects the
+    # current defect set (old defect names would otherwise linger and pollute tests).
+    for stale in out.glob("*.md"):
+        stale.unlink()
     manifest = []
 
     # 5 correct documents
