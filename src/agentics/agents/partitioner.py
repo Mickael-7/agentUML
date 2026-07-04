@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agentics.agents.base import Partition
+from agentics.llm.parse_json import parse_llm_json
 
 if TYPE_CHECKING:
     from agentics.io.writer import DiagramWriter
@@ -55,7 +54,6 @@ class PartitionerAgent:
                 req_texts=req_texts,
             )
             partitions.append(partition)
-            # Persist to disk
             self.writer.write_partition(partition.partition_id, partition.to_dict())
             self.logger.info(
                 "Partition '%s' (%s) saved with %d requirements.",
@@ -71,11 +69,7 @@ class PartitionerAgent:
         return partitions
 
     def _parse_response(self, raw: str) -> dict:
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            raise PartitionError(f"Partitioner did not return JSON. Response:\n{raw[:500]}")
         try:
-            return json.loads(match.group())
-        except json.JSONDecodeError as e:
-            raise PartitionError(f"Invalid JSON from partitioner: {e}") from e
+            return parse_llm_json(raw, "PartitionerAgent")
+        except ValueError as e:
+            raise PartitionError(str(e)) from e

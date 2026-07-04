@@ -1,0 +1,62 @@
+[
+  {
+    "file": "correto_1_login.md",
+    "name": "Realizar Login (correto)",
+    "expected_verdict": "correct",
+    "expected_fail": null
+  },
+  {
+    "file": "correto_2_carrinho.md",
+    "name": "Adicionar Produto ao Carrinho (correto)",
+    "expected_verdict": "correct",
+    "expected_fail": null
+  },
+  {
+    "file": "correto_3_busca.md",
+    "name": "Buscar Produtos (correto)",
+    "expected_verdict": "correct",
+    "expected_fail": null
+  },
+  {
+    "file": "correto_4_checkout.md",
+    "name": "Finalizar Pedido (correto)",
+    "expected_verdict": "correct",
+    "expected_fail": null
+  },
+  {
+    "file": "correto_5_perfil.md",
+    "name": "Editar Perfil (correto)",
+    "expected_verdict": "correct",
+    "expected_fail": null
+  },
+  {
+    "file": "incorreto_1_sem_cenario.md",
+    "name": "Realizar Login -- sem cenario",
+    "expected_verdict": "incorrect",
+    "expected_fail": "has_use_case_context"
+  },
+  {
+    "file": "incorreto_2_sintaxe_invalida.md",
+    "name": "Adicionar Produto ao Carrinho -- sintaxe invalida",
+    "expected_verdict": "incorrect",
+    "expected_fail": "symbology_correct"
+  },
+  {
+    "file": "incorreto_3_notacao_classe.md",
+    "name": "Buscar Produtos -- notacao classe",
+    "expected_verdict": "incorrect",
+    "expected_fail": "symbology_correct"
+  },
+  {
+    "file": "incorreto_4_notacao_sequencia.md",
+    "name": "Finalizar Pedido -- notacao sequencia",
+    "expected_verdict": "incorrect",
+    "expected_fail": "symbology_correct"
+  },
+  {
+    "file": "incorreto_5_notacao_estado.md",
+    "name": "Editar Perfil -- notacao estado",
+    "expected_verdict": "incorrect",
+    "expected_fail": "symbology_correct"
+  }
+]

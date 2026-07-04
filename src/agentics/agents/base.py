@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from agentics.agents.critic import CriticAgent
@@ -20,12 +20,55 @@ class ValidationError(Exception):
 
 
 @dataclass
+class PipelineContext:
+    """Accumulated context from prior pipeline phases (Super-Prompt methodology)."""
+
+    business_rules: str = ""
+    use_case_puml: str = ""
+    sequence_pumls: list[str] = field(default_factory=list)
+    domain_pumls: list[str] = field(default_factory=list)
+
+    def with_business_rules(self, rules: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=rules,
+            use_case_puml=self.use_case_puml,
+            sequence_pumls=list(self.sequence_pumls),
+            domain_pumls=list(self.domain_pumls),
+        )
+
+    def with_use_case(self, puml: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=self.business_rules,
+            use_case_puml=puml,
+            sequence_pumls=list(self.sequence_pumls),
+            domain_pumls=list(self.domain_pumls),
+        )
+
+    def with_sequence(self, puml: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=self.business_rules,
+            use_case_puml=self.use_case_puml,
+            sequence_pumls=self.sequence_pumls + [puml],
+            domain_pumls=list(self.domain_pumls),
+        )
+
+    def with_domain(self, puml: str) -> PipelineContext:
+        return PipelineContext(
+            business_rules=self.business_rules,
+            use_case_puml=self.use_case_puml,
+            sequence_pumls=list(self.sequence_pumls),
+            domain_pumls=self.domain_pumls + [puml],
+        )
+
+
+@dataclass
 class Partition:
     partition_id: str
     diagram_type: str
     requirements: list[str]
     name: str
     req_texts: dict[str, str] = None  # req_id -> full text
+    pipeline_context: PipelineContext = None  # accumulated context from prior phases
 
     def __post_init__(self):
         if self.req_texts is None:
@@ -62,6 +105,7 @@ class Agent(ABC):
         validator_cli: PlantUMLValidator,
         semantic_validator: SemanticValidator,
         critic: CriticAgent,
+        emit: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.llm = llm
         self.config = config
@@ -69,6 +113,7 @@ class Agent(ABC):
         self.validator_cli = validator_cli
         self.semantic_validator = semantic_validator
         self.critic = critic
+        self.emit = emit
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _load_prompt(self, name: str) -> str:
@@ -80,13 +125,85 @@ class Agent(ABC):
             )
         return prompt_path.read_text(encoding="utf-8")
 
+    def _emit_diagram(
+        self,
+        diagram_id: str,
+        diagram_type: str,
+        name: str,
+        status: str = "generating",
+        **extra: object,
+    ) -> None:
+        """Emit a diagram SSE event with arbitrary extra fields."""
+        if self.emit is None:
+            return
+        payload: dict = {
+            "diagram_id": diagram_id,
+            "diagram_type": diagram_type,
+            "name": name,
+            "status": status,
+        }
+        payload.update(extra)
+        # Attach live token usage from the LLM client
+        if hasattr(self.llm, "token_usage") and self.llm.token_usage is not None:
+            payload["token_usage"] = self.llm.token_usage.to_dict()
+        self.emit("diagram", payload)
+
+    @staticmethod
+    def _build_context_section(ctx: PipelineContext | None) -> str:
+        """Build a markdown section with accumulated context from prior phases."""
+        if ctx is None:
+            return "(no prior context)"
+        parts = []
+        if ctx.business_rules:
+            parts.append(f"## Business Rules Extracted\n{ctx.business_rules}")
+        if ctx.use_case_puml:
+            parts.append(
+                f"## Use Case Diagram (previously generated)\n```plantuml\n{ctx.use_case_puml}\n```"
+            )
+        if ctx.sequence_pumls:
+            seq_text = "\n\n".join(f"```plantuml\n{s}\n```" for s in ctx.sequence_pumls)
+            parts.append(f"## Sequence Diagrams (previously generated)\n{seq_text}")
+        if ctx.domain_pumls:
+            dom_text = "\n\n".join(f"```plantuml\n{d}\n```" for d in ctx.domain_pumls)
+            parts.append(f"## Class Diagrams (previously generated)\n{dom_text}")
+        return "\n\n".join(parts) if parts else "(no prior context)"
+
     @abstractmethod
     def build_prompt(self, partition: Partition, error_context: str = "") -> list[dict]:
         """Return the messages list for the LLM."""
 
+    def build_prompt_from_template(self, partition: Partition, template_name: str, error_context: str = "") -> list[dict]:
+        """Build prompt from a template file with standard placeholder substitution."""
+        import re
+        template = self._load_prompt(template_name)
+        diagram_id = partition.partition_id
+        req_list = ", ".join(partition.requirements)
+        req_lines = "\n".join(
+            f"{rid}: {partition.req_texts.get(rid, '(no text)')}"
+            for rid in partition.requirements
+        )
+        context_section = self._build_context_section(partition.pipeline_context)
+        prompt = (
+            template.replace("{diagram_id}", diagram_id)
+            .replace("{diagram_name}", partition.name)
+            .replace("{req_list}", req_list)
+            .replace("{requirements}", req_lines)
+            .replace("{accumulated_context}", context_section)
+            .replace("{error_context}", error_context or "(none)")
+        )
+        return [{"role": "user", "content": prompt}]
+
     @abstractmethod
     def parse_output(self, raw: str) -> str:
         """Extract clean PlantUML text from LLM response."""
+
+    def parse_puml_output(self, raw: str) -> str:
+        """Extract PlantUML code between @startuml/@enduml tags."""
+        import re
+        match = re.search(r"(@startuml.*?@enduml)", raw, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return raw.strip()
 
     def run(self, partition: Partition) -> str:
         if self.diagram_type and partition.diagram_type != self.diagram_type:
@@ -100,6 +217,9 @@ class Agent(ABC):
         if "_" in partition.partition_id:
             diagram_id = partition.partition_id
 
+        diagram_name = partition.name
+        diagram_type = partition.diagram_type
+
         self.logger.info("Starting GVCR cycle for %s", diagram_id)
 
         puml_text = ""
@@ -109,11 +229,25 @@ class Agent(ABC):
         max_retries = self.config.max_validation_retries
         for attempt in range(1, max_retries + 1):
             self.logger.info("[%s] Generation attempt %d/%d", diagram_id, attempt, max_retries)
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="generating",
+                attempt=attempt,
+                attempt_max=max_retries,
+            )
             messages = self.build_prompt(partition, error_context=error_ctx)
             raw = self.llm.complete(messages)
             puml_text = self.parse_output(raw)
 
             # Syntactic validation
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="validating_syntax",
+                attempt=attempt,
+                attempt_max=max_retries,
+            )
             is_valid, syntax_err = self.validator_cli.check(puml_text)
             if not is_valid:
                 self.logger.warning(
@@ -123,6 +257,13 @@ class Agent(ABC):
                 continue
 
             # Semantic validation
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="validating_semantics",
+                attempt=attempt,
+                attempt_max=max_retries,
+            )
             sem_result = self.semantic_validator.validate(puml_text, partition.diagram_type)
             if not sem_result.is_valid:
                 sem_errors = "; ".join(e.message for e in sem_result.errors)
@@ -147,19 +288,41 @@ class Agent(ABC):
         max_refinements = self.config.max_refinement_rounds
         threshold = self.config.critic_score_threshold
 
+        # Build related_diagrams from pipeline context
+        related: list[str] = []
+        if partition.pipeline_context:
+            ctx = partition.pipeline_context
+            if ctx.use_case_puml:
+                related.append(ctx.use_case_puml)
+            related.extend(ctx.sequence_pumls)
+            related.extend(ctx.domain_pumls)
+
         for round_num in range(max_refinements + 1):
             self.logger.info("[%s] Critique round %d/%d", diagram_id, round_num, max_refinements)
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="critiquing",
+                critic_round=round_num,
+                critic_round_max=max_refinements,
+            )
             critique = self.critic.evaluate(
                 puml_text=puml_text,
                 diagram_type=partition.diagram_type,
                 requirements=partition.requirements,
-                related_diagrams=[],
+                related_diagrams=related,
             )
             score = critique["score"]
             self.logger.info("[%s] Critic score=%d (threshold=%d)", diagram_id, score, threshold)
 
             if score >= threshold:
                 self.logger.info("[%s] Approved by critic. Saving.", diagram_id)
+                self._emit_diagram(
+                    diagram_id, diagram_type, diagram_name,
+                    status="completed",
+                    sub_status="completed",
+                    critic_score=score,
+                )
                 path = self.writer.write_puml(diagram_id, puml_text, draft=False)
                 return str(path)
 
@@ -174,6 +337,14 @@ class Agent(ABC):
                 return str(path)
 
             # Refine using critic feedback
+            self._emit_diagram(
+                diagram_id, diagram_type, diagram_name,
+                status="generating",
+                sub_status="refining",
+                critic_score=score,
+                critic_round=round_num,
+                critic_round_max=max_refinements,
+            )
             issues_text = "\n".join(f"- {i}" for i in critique.get("issues", []))
             suggestions_text = "\n".join(f"- {s}" for s in critique.get("suggestions", []))
             refinement_ctx = (

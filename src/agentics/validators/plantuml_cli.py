@@ -19,11 +19,26 @@ class PlantUMLValidator:
             return ["java", "-jar", jar, "-checkonly", puml_path]
         return [jar, "-checkonly", puml_path]
 
+    @staticmethod
+    def _sanitize_puml(puml_text: str) -> str:
+        """Remove dangerous PlantUML directives that could read/include files."""
+        dangerous = []
+        for line in puml_text.splitlines():
+            stripped = line.strip()
+            # Block !include, !import, !theme, !stdlib directives
+            if stripped.startswith("!include") or stripped.startswith("!import"):
+                continue
+            if stripped.startswith("!theme") and (".." in stripped or "/" in stripped or "\\" in stripped):
+                continue
+            dangerous.append(line)
+        return "\n".join(dangerous)
+
     def check(self, puml_text: str) -> tuple[bool, str]:
+        sanitized = self._sanitize_puml(puml_text)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".puml", delete=False, encoding="utf-8"
         ) as f:
-            f.write(puml_text)
+            f.write(sanitized)
             tmp_path = f.name
 
         try:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from agentics.llm.parse_json import parse_llm_json
 
 if TYPE_CHECKING:
     from agentics.llm.base import LLMClient
@@ -45,18 +45,10 @@ class CriticAgent:
         return self._parse_response(raw)
 
     def _parse_response(self, raw: str) -> dict:
-        # Strip markdown code fences if present
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
-        # Extract first JSON object
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            raise CriticResponseError(
-                f"Critic LLM did not return a JSON object. Response was:\n{raw[:500]}"
-            )
         try:
-            data = json.loads(match.group())
-        except json.JSONDecodeError as e:
-            raise CriticResponseError(f"Invalid JSON from critic: {e}\nRaw: {raw[:500]}") from e
+            data = parse_llm_json(raw, "CriticAgent")
+        except ValueError as e:
+            raise CriticResponseError(str(e)) from e
 
         score = data.get("score")
         if not isinstance(score, (int, float)) or not (0 <= score <= 10):

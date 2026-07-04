@@ -1,90 +1,30 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from agentics.agents.base import Partition, ValidationError
+from agentics.agents.base import PipelineContext
+from agentics.agents.business_rules import BusinessRulesAgent
 from agentics.agents.critic import CriticAgent
-from agentics.agents.domain import DomainAgent
 from agentics.agents.partitioner import PartitionerAgent
 from agentics.agents.requirements_quality import RequirementsQualityAgent
-from agentics.agents.sequence import SequenceAgent
-from agentics.agents.specialization import SpecializationAgent
-from agentics.agents.use_case import UseCaseAgent
 from agentics.config import Config
 from agentics.io.reader import DocumentReader
 from agentics.io.writer import DiagramWriter
 from agentics.llm.base import create_llm_client
 from agentics.validators.plantuml_cli import PlantUMLValidator
 from agentics.validators.semantic import SemanticValidator, cross_validate
+from agentics.api.services.pipeline_runner import run_phases
 
 logger = logging.getLogger(__name__)
-
-_AGENT_MAP = {
-    "use_case": UseCaseAgent,
-    "domain_class": DomainAgent,
-    "sequence": SequenceAgent,
-    "specialized_class": SpecializationAgent,
-}
-
-
-def _run_group(
-    partition: Partition,
-    llm,
-    config: Config,
-    writer: DiagramWriter,
-    validator_cli: PlantUMLValidator,
-    sem_validator: SemanticValidator,
-    critic: CriticAgent,
-) -> tuple[str, str | None]:
-    """Run GVCR cycle for a single partition. Returns (diagram_id, error_or_None)."""
-    AgentClass = _AGENT_MAP.get(partition.diagram_type)
-    if AgentClass is None:
-        return partition.partition_id, f"Unknown diagram type: {partition.diagram_type}"
-    agent = AgentClass(
-        llm=llm,
-        config=config,
-        writer=writer,
-        validator_cli=validator_cli,
-        semantic_validator=sem_validator,
-        critic=critic,
-    )
-    try:
-        path = agent.run(partition)
-        logger.info("✓ %s → %s", partition.partition_id, path)
-        return partition.partition_id, None
-    except ValidationError as e:
-        logger.error("✗ %s validation failed: %s", partition.partition_id, e)
-        return partition.partition_id, str(e)
-    except Exception as e:
-        logger.error("✗ %s unexpected error: %s", partition.partition_id, e)
-        return partition.partition_id, str(e)
-
-
-def _run_type_groups(
-    type_partitions: list[Partition],
-    llm,
-    config: Config,
-    writer: DiagramWriter,
-    validator_cli: PlantUMLValidator,
-    sem_validator: SemanticValidator,
-    critic: CriticAgent,
-) -> list[tuple[str, str | None]]:
-    """Process all partitions of a single type sequentially."""
-    results = []
-    for partition in type_partitions:
-        results.append(
-            _run_group(partition, llm, config, writer, validator_cli, sem_validator, critic)
-        )
-    return results
 
 
 def run_pipeline(input_path: str, output_dir: str | None = None) -> int:
     """
-    Run the full Agentics pipeline.
+    Run the full Agentics pipeline (CLI entry point).
     Returns exit code: 0 = success, 1 = requirements gate failed, 2 = partial failures.
     """
     cfg = Config()
@@ -134,52 +74,30 @@ def run_pipeline(input_path: str, output_dir: str | None = None) -> int:
     partitions = partitioner.partition(req_text)
     logger.info("Created %d partitions.", len(partitions))
 
-    # Group partitions by diagram type for parallel execution
-    groups: dict[str, list[Partition]] = {}
-    for p in partitions:
-        groups.setdefault(p.diagram_type, []).append(p)
+    # ── Step 4: Business Rules Extraction ──────────────────────────────────
+    ctx = PipelineContext()
+    if cfg.super_prompt_mode and cfg.enable_business_rules:
+        logger.info("Extracting business rules...")
+        rules_agent = BusinessRulesAgent(llm)
+        rules_result = rules_agent.extract(req_text)
+        ctx = ctx.with_business_rules(rules_result["rules_text"])
+        writer.write_report("business_rules.json", json.dumps(rules_result["rules"], indent=2, ensure_ascii=False))
+        logger.info("Extracted %d business rules across %d domains", len(rules_result["rules"]), len(rules_result.get("domains", [])))
 
-    # ── Step 4: Run agents in parallel (one thread per type) ──────────────
-    logger.info("Starting diagram generation (%d types in parallel)...", len(groups))
-    all_errors: list[tuple[str, str]] = []
-    generated_pumls: list[dict] = []
+    # ── Step 5: Run phases ─────────────────────────────────────────────────
+    generated_pumls, all_errors, _ = run_phases(
+        partitions=partitions,
+        ctx=ctx,
+        cfg=cfg,
+        llm=llm,
+        writer=writer,
+        validator_cli=validator_cli,
+        sem_validator=sem_validator,
+        critic=critic,
+        super_prompt_mode=cfg.super_prompt_mode,
+    )
 
-    with ThreadPoolExecutor(max_workers=len(groups) or 1) as executor:
-        futures = {
-            executor.submit(
-                _run_type_groups,
-                type_partitions,
-                llm,
-                cfg,
-                writer,
-                validator_cli,
-                sem_validator,
-                critic,
-            ): diagram_type
-            for diagram_type, type_partitions in groups.items()
-        }
-        for future in as_completed(futures):
-            diagram_type = futures[future]
-            try:
-                results = future.result()
-                for diagram_id, error in results:
-                    if error:
-                        all_errors.append((diagram_id, error))
-                    else:
-                        puml_path = cfg.output_dir / f"{diagram_id}.puml"
-                        if puml_path.exists():
-                            generated_pumls.append(
-                                {
-                                    "diagram_id": diagram_id,
-                                    "diagram_type": diagram_type,
-                                    "puml_text": puml_path.read_text(encoding="utf-8"),
-                                }
-                            )
-            except Exception as e:
-                logger.error("Thread for '%s' crashed: %s", diagram_type, e)
-                all_errors.append((diagram_type, str(e)))
-
-    # ── Step 5: Cross-diagram validation ──────────────────────────────────
+    # ── Step 6: Cross-diagram validation ──────────────────────────────────
     logger.info("Running cross-diagram validation on %d diagrams...", len(generated_pumls))
     cross_report = cross_validate(generated_pumls)
     writer.write_report("cross_validation_report.md", cross_report.to_markdown())
@@ -199,6 +117,13 @@ def run_pipeline(input_path: str, output_dir: str | None = None) -> int:
         succeeded,
         total,
     )
+
+    usage = llm.token_usage.to_dict()
+    logger.info(
+        "Token usage: %d total (%d prompt / %d output / %d calls)",
+        usage["total_tokens"], usage["prompt_tokens"], usage["completion_tokens"], usage["call_count"],
+    )
+
     if all_errors:
         for diagram_id, err in all_errors:
             logger.warning("  FAILED: %s — %s", diagram_id, err)
